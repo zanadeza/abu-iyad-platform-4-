@@ -161,14 +161,24 @@ man = os.path.join(R, '.built.json')
 if os.path.exists(man):
     for d in json.load(open(man)): shutil.rmtree(os.path.join(R, d), ignore_errors=True)
 built = []; posts = []; used = set()
+LEGACY_UNTIL = '2026-11-20'
+raw = []
 for f in sorted(os.listdir(f'{R}/content/posts')):
     if not f.endswith('.md'): continue
     d, b = read(f'{R}/content/posts/{f}')
     d['slug'] = f[:-3]; d['body'] = b; d['section'] = d.get('section') or 'aid'
     d['date'] = ds(d.get('date')) or '2000-01-01'
-    n = int(d['id']) if d.get('id') else zlib.crc32(d['slug'].encode()) % 9000 + 1000
-    while n in used: n += 1
-    used.add(n); d['id'] = n; d['path'] = f'{d["slug"]}-{n}'
+    raw.append(d)
+for d in raw:
+    if d.get('id'): used.add(int(d['id']))
+for d in sorted(raw, key=lambda x: (0 if x['date'] <= LEGACY_UNTIL else 1, x['slug'])):
+    if d.get('id'): n = int(d['id'])
+    else:
+        n = zlib.crc32(d['slug'].encode()) % 9000 + 1000
+        while n in used: n += 1
+        used.add(n)
+    d['id'] = n; d['path'] = str(n)
+    d['legacy'] = f'{d["slug"]}-{n}' if d['date'] <= LEGACY_UNTIL and not str(d['slug']).isdigit() else None
     posts.append(d)
 posts.sort(key=lambda x: x['date'], reverse=True)
 orgs = [p for p in posts if p['section'] == 'orgs']
@@ -277,6 +287,10 @@ for p in posts:
         if p.get('close_date'): jp['validThrough'] = ds(p['close_date'])
         ld.append(jp)
     write(f'{p["path"]}/index.html', layout(p['title'], p.get('summary') or p['title'], body, '../', f'{p["path"]}/', p['section'], ld)); built.append(p['path'])
+for p in posts:
+    if p.get('legacy') and p['legacy'] != p['path']:
+        tgt = f'/{p["path"]}/'
+        write(f'{p["legacy"]}/index.html', f'<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>{e(p["title"])}</title><link rel="canonical" href="{BASE}{tgt}"><meta http-equiv="refresh" content="0; url={tgt}"><script>location.replace("{tgt}")</script></head><body><a href="{tgt}">انتقل إلى الصفحة</a></body></html>'); built.append(p['legacy'])
 for f in sorted(os.listdir(f'{R}/content/pages')):
     d, b = read(f'{R}/content/pages/{f}'); sl = f[:-3]; extra = ''
     if sl == 'warning':
